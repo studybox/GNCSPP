@@ -2,10 +2,10 @@ import tensorflow as tf
 import tensorflow.contrib.layers as layers
 
 #TODO Verify this part of the code need graph building
-def _struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, inpt, scope, reuse=False):
+def _struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, outnodes, outedges, edgev, inpt, scope, reuse=False):
     with tf.variable_scope(scope, reuse=reuse):
         # The input is of the format (b, 2n+5e+u), for now let's go with dense matrices
-        n1,n2,e1,e2,e3,e4,e5,u = tf.split(inpt, [numnodes,numnodes,numedges,numedges,numedges,numedges,numedges,numglobals], axis=1)
+        n1,e1,e2,e3,e4,u = tf.split(inpt, [numnodes,numedges,numedges,numedges,numedges,numglobals], axis=1)
         # n1 is of shape (b, n, 1)
         n1 = tf.expand_dims(n1, axis=2)
         #nodelinears is of shape (b, n, p)
@@ -21,23 +21,21 @@ def _struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, inpt, scope
         #edgelinears is of shape (b, e, p)
         edgelinears = layers.fully_connected(e1e2, num_outputs=hidden, activation_fn=tf.nn.relu)
 
-        # outnodes is a list length n of out nodes
-        outnodes = tf.split(e5, n2, axis = 1)
+
         # khotsnode is a list of indicator vectors
         khotsnode = []
         for on in outnodes:
-            khotsnode.append(tf.reduce(tf.one_hot(on, numnodes), axis=1))
+            khotsnode.append(tf.reduce(tf.one_hot(on, numnodes), axis=0))
         # khotsnode is of shape (b, n, n)
-        khotsnode = tf.stack(khotsnode, axis = 1)
+        khotsnode = tf.tile(tf.expand_dims(tf.stack(khotsnode, axis=0), axis=0), [n1.shape[0],1,1])
 
-        # outedges is a list length n of out edges
-        outedges = tf.split(e4, n2, axis = 1)
+
         # khotsedge is a list of indicator vectors
         khotsedge = []
         for oe in outedges:
-            khotsedge.append(tf.reduce(tf.one_hot(oe, numedges), axis=1))
-        # khots is of shape (b, n, e)
-        khotsedge = tf.stack(khotsedge, axis = 1)
+            khotsedge.append(tf.reduce(tf.one_hot(oe, numedges), axis=0))
+        # khotedges is of shape (b, n, e)
+        khotsedge = tf.tile(tf.expand_dims(tf.stack(khotsedge, axis=0), axis=0), [n1.shape[0],1,1])
         # edgesums is of shape (b, n, p)
         edgesums = tf.matmul(knotsedge, edgelinears)
 
@@ -56,45 +54,45 @@ def _struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, inpt, scope
             neighborsums = tf.matmul(knotsnode, outlinears)
             # curinputlinears is of shape (b, n, p)
             curinputlinears = tf.nn.relu(neighborsums + inptlinears)
-        nodeembed = curinputlinears
+        nodeembed = curinputlinears #(b, n, p)
         # insert a second GN block
-        e4perm = tf.one_hot(e4, numedges) # (b, e, e)
-        e3 = tf.expand_dims(e3, axis= 2) # (b, e, 1)
-        e3perm = tf.matmul(e4perm, e3) # (b, e, 1)
-        zero = tf.constant(0, dtype=e3.dtype)
-        one = tf.constant(1, dtype=e3.dtype)
-        #pathindexs = tf.where(tf.not_equal(e3perm, zero))
-        pathedge =  e3perm # of shape (b, e, 1)
+        receivers = tf.tile(tf.expand_dims(tf.one_hot(edgev, numnodes), axis=0), [n1.shape[0],1,1]) # (b, e, n)
+        pathedge = tf.expand_dims(e3, axis= 2) # (b, e, 1)
         #tf.gather(e3perm, pathindexs) # of shape (b, k, 1)
-
+        zero = tf.constant(0, dtype=e3.dtype)
         e3linears = layers.fully_connected(pathedge, num_outputs=hidden, activation_fn=None, biases_initializer=None) # of shape(b, e, p)
         e3linears = tf.expand_dims(e3linears, axis=3) # of shape (b, e, p, 1)
         pathMat = layers.fully_connected(e3linears, num_outputs=hidden, activation_fn=None, biases_initializer=None) #of shape (b, e, p, p)
 
-        e5perm = tf.one_hot(e5, numnodes) # of shape (b, e, n)
-        nodeembedsperm = tf.expand_dims(tf.matmul(e5perm, nodeembed), axis = 3) # of shape (b, e, p, 1)
+        nodeembedsperm = tf.expand_dims(tf.matmul(receivers, nodeembed), axis = 3) # of shape (b, e, p, 1)
         edgeembed = tf.matmul(pathMat, nodeembedsperm) # of shape (b, e, p, 1)
         edgeembed = tf.squeeze(edgeembed, axis=3) # of shape (b, e, p)
-        # actions
+        # actions (b, e, 1)
+        actions = tf.expand_dims(e4, axis=2)
         # unstack path
-        pathlist = tf.unstack(tf.squeeze(pathedge, axis=2), axis=0) # b length list of (e, )
+        actlinears = actions * edgeembed # shape(b, e, p)
+        actionlist = tf.unstack(e4, axis=0) # b length list of (e, )
         actidx = []
         # unstack edgeembed
         edgeembedlist = tf.unstack(edgeembed, axis=0) # b length list of (e,p)
         # qlinears should be (b,1,p)
         qlinears = layers.fully_connected(tf.reduce_sum(edgeembed, axis=1, keepdims=True), num_outputs=hidden, activation_fn=tf.nn.relu)
-        qlist = tf.unstack(qlinears, axis=0) # b length list of (1, p)
+        qnlinears = tf.tile(qlist[idx], [1, numedges,1])  # (b, e, p)
+        qnlinears2 = tf.concat([qnlinears, actlinears], axis=2) #(b, e, 2p)
+        q = tf.squeeze(layers.fully_connected(qnlinears, num_outputs=1, activation_fn=None, biases_initializer=None), [2]) # (b, n)
+
+        qlist = tf.unstack(q, axis=0) # b length list of (1, p)
         qout = []
-        for idx, p in enumerate(pathlist):
-            actionindex = tf.where(tf.less(p, one))
+        for idx, a in enumerate(actionlist):
+            actionindex = tf.reshape(tf.where(tf.not_equal(a, zero)), [-1])
             actidx.append(actionindex)
-            actembeds = tf.gather(edgeembedlist[idx], actionindex) # (k, p)
-            actlinears = layers.fully_connected(actembeds, num_outputs=hidden, activation_fn=tf.nn.relu, reuse=True, scope="action") # (k, p)
-            qklinears = tf.tile(qlist[idx], [actionindex.shape[0],1])  # (k, p)
-            q = tf.concat([qklinears, actlinears], axis=1)
-            qout.append(q)
+            #actembeds = tf.gather(edgeembedlist[idx], actionindex) # (k, p)
+            #actlinears = layers.fully_connected(actembeds, num_outputs=hidden, activation_fn=tf.nn.relu, reuse=True, scope="action") # (k, p)
+            #qklinears = tf.tile(qlist[idx], [actionindex.shape[0],1])  # (k, p)
+            #q = tf.concat([qklinears, actlinears], axis=1)
+            qout.append(tf.gather(actionindex))
         return qout, actidx
-def struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals):
+def struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, outdegrees, outedges, outnodes, edgev):
     """
     The model is adopted based on structure_2_vec in the paper Dai. et.al, ICML 2016,
     The Q function is defined as:
@@ -111,4 +109,8 @@ def struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals):
     q_func: function
         q_function for Q learning
     """
-    return lambda *args, **kwargs: _struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, *args, **kwargs)
+    # outnodes is a list length n of out nodes
+    outnodes = np.split(outnodes, outdegrees, axis = 1)
+    # outedges is a list length n of out edges
+    outedges = np.split(outedges, outdegrees, axis = 1)
+    return lambda *args, **kwargs: _struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, outnodes, outedges, edgev, *args, **kwargs)
