@@ -2,7 +2,7 @@ import tensorflow as tf
 import tensorflow.contrib.layers as layers
 
 #TODO Verify this part of the code need graph building
-def _struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, outnodes, outedges, edgev, inpt, scope, reuse=False):
+def _struct_2_vec(hidden, embeditrn, numbatchs,  numnodes, numedges, numglobals, outnodes, outedges, edgev, inpt, scope, reuse=False):
     with tf.variable_scope(scope, reuse=reuse):
         # The input is of the format (b, 2n+5e+u), for now let's go with dense matrices
         n1,e1,e2,e3,e4,u = tf.split(inpt, [numnodes,numedges,numedges,numedges,numedges,numglobals], axis=1)
@@ -79,9 +79,9 @@ def _struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, outnodes, o
         qlinears = layers.fully_connected(tf.reduce_sum(edgeembed, axis=1, keepdims=True), num_outputs=hidden, activation_fn=tf.nn.relu)
         qnlinears = tf.tile(qlist[idx], [1, numedges,1])  # (b, e, p)
         qnlinears2 = tf.concat([qnlinears, actlinears], axis=2) #(b, e, 2p)
-        q = tf.squeeze(layers.fully_connected(qnlinears, num_outputs=1, activation_fn=None, biases_initializer=None), [2]) # (b, n)
+        q = tf.squeeze(layers.fully_connected(qnlinears2, num_outputs=1, activation_fn=None, biases_initializer=None), [2]) # (b, e)
 
-        qlist = tf.unstack(q, axis=0) # b length list of (1, p)
+        qlist = tf.unstack(q, axis=0) # b length list of (e, )
         qout = []
         for idx, a in enumerate(actionlist):
             actionindex = tf.reshape(tf.where(tf.not_equal(a, zero)), [-1])
@@ -90,9 +90,9 @@ def _struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, outnodes, o
             #actlinears = layers.fully_connected(actembeds, num_outputs=hidden, activation_fn=tf.nn.relu, reuse=True, scope="action") # (k, p)
             #qklinears = tf.tile(qlist[idx], [actionindex.shape[0],1])  # (k, p)
             #q = tf.concat([qklinears, actlinears], axis=1)
-            qout.append(tf.gather(actionindex))
+            qout.append(tf.gather(qlist[idx], actionindex))
         return qout, actidx
-def struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, outdegrees, outedges, outnodes, edgev):
+def struct_2_vec(hidden, embeditrn, numbatchs, numnodes, numedges, numglobals, outdegrees, outedges, outnodes, edgev):
     """
     The model is adopted based on structure_2_vec in the paper Dai. et.al, ICML 2016,
     The Q function is defined as:
@@ -113,4 +113,4 @@ def struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, outdegrees, 
     outnodes = np.split(outnodes, outdegrees, axis = 1)
     # outedges is a list length n of out edges
     outedges = np.split(outedges, outdegrees, axis = 1)
-    return lambda *args, **kwargs: _struct_2_vec(hidden, embeditrn, numnodes, numedges, numglobals, outnodes, outedges, edgev, *args, **kwargs)
+    return lambda *args, **kwargs: _struct_2_vec(hidden, embeditrn, numbatchs, numnodes, numedges, numglobals, outnodes, outedges, edgev, *args, **kwargs)
