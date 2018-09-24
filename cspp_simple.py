@@ -230,7 +230,10 @@ def learn(env,
             load_state(model_file)
             logger.log('Loaded model from {}'.format(model_file))
             model_saved = True
-
+        reward_list = []
+        action_list = []
+        state_list = [obs]
+        done_list = []
         for t in range(max_timesteps):
             if callback is not None:
                 if callback(locals(), globals()):
@@ -255,14 +258,10 @@ def learn(env,
             env_action = action
             reset = False
             new_obs, rew, done, _ = env.step(env_action)
-            n = 1
-            reward = rew
-            while n < n_steps:
-                next_action = act(np.array(new_obs)[None], update_eps=update_eps, **kwargs)[0]
-                new_obs, rew, done, _ = env.step(next_action)
-                reward = rew + gamma*reward
-                if done:
-                    break
+            state_list.append(new_obs)
+            action_list.append(action)
+            reward_list.append(rew)
+            done_list.append(done)
             # Store transition in the replay buffer.
             replay_buffer.add(obs, action, reward, new_obs, float(done))
             obs = new_obs

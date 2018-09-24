@@ -4,7 +4,7 @@ import tensorflow.contrib.layers as layers
 #TODO Verify this part of the code need graph building
 def _struct_2_vec(hidden, embeditrn, numbatchs,  numnodes, numedges, numglobals, outnodes, outedges, edgev, inpt, scope, reuse=False):
     with tf.variable_scope(scope, reuse=reuse):
-        # The input is of the format (b, 2n+5e+u), for now let's go with dense matrices
+        # The input is of the format (b, n+4e+u), for now let's go with dense matrices
         n1,e1,e2,e3,e4,u = tf.split(inpt, [numnodes,numedges,numedges,numedges,numedges,numglobals], axis=1)
         # n1 is of shape (b, n, 1)
         n1 = tf.expand_dims(n1, axis=2)
