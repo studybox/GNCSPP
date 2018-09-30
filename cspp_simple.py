@@ -12,9 +12,9 @@ from baselines import logger
 from baselines.common.schedules import LinearSchedule
 from baselines.common.input import observation_input
 
-from baselines import deepq
+import cspp_build_graph as deepq
 from baselines.deepq.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
-from baselines.deepq.utils import ObservationInput
+import utils
 
 
 class ActWrapper(object):
@@ -176,7 +176,7 @@ def learn(env,
     # by cloudpickle when serializing make_obs_ph
 
     def make_obs_ph(name):
-        return ObservationInput(env.observation_space, name=name)
+        return ObservationInput(env.observation_space, batch_size, name=name)
 
     act, train, update_target, debug = deepq.build_train(
         make_obs_ph=make_obs_ph,

@@ -180,11 +180,11 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
 
         eps = tf.get_variable("eps", (), initializer=tf.constant_initializer(0))
 
-        q_values, act_idxs = q_func(observations_ph.get() scope="q_func")
+        q_values, act_idxs = q_func(observations_ph.get(), scope="q_func")
         #deterministic_actions = tf.argmax(q_values, axis=1)
         deterministic_actions_list =[]
         for (idx, value) in enumerate(q_values):
-            deterministic_actions_list.append(tf.gather(act_idxs[idx], (tf.argmax(value))))
+            deterministic_actions_list.append(tf.gather(act_idxs[idx], (tf.argmax(value, axis=0))))
         deterministic_actions = tf.stack(deterministic_actions_list)
         batch_size = tf.shape(observations_ph.get())[0]
         random_actions = []
@@ -400,17 +400,17 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
 
         # q scores for actions which we know were selected in the given state.
         q_t_selected = []
-        act_t_ph_list = tf.unstack(act_t_ph, 0)
+        #act_t_ph_list = tf.unstack(act_t_ph, 0)
         for (idx, value) in enumerate(q_t):
-            q_t_selected.append(tf.gather(value, tf.where(tf.equal(act_idxs_t[idx], act_t_ph_list[idx]))[0]))
+            q_t_selected.append(tf.gather(value, tf.where(tf.equal(act_idxs_t[idx], tf.gather(act_t_ph, idx)))[0]))
         #q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
-        q_t_selected = tf.stack(q_t_selected, axis=0)
+        q_t_selected = tf.concate(q_t_selected, axis=0)
         # compute estimate of best possible value starting from state at t + 1
         if double_q:
             q_tp1_using_online_net, act_idxs_tp1_using_online_net = q_func(obs_tp1_input.get(), scope="q_func", reuse=True)
             q_tp1_best = []
             for (idx, value) in enumerate(q_tp1_using_online_net):
-                q_tp1_best.append(tf.gather(q_tp1[idx], tf.argmax(value)))
+                q_tp1_best.append(tf.gather(q_tp1[idx], tf.argmax(value, axis=0)))
             #q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
             q_tp1_best = tf.stack(q_tp1_best, axis=0)
         else:

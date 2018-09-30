@@ -1,3 +1,4 @@
+import numpy as np
 import tensorflow as tf
 import tensorflow.contrib.layers as layers
 
@@ -25,38 +26,38 @@ def _struct_2_vec(hidden, embeditrn, numbatchs,  numnodes, numedges, numglobals,
         # khotsnode is a list of indicator vectors
         khotsnode = []
         for on in outnodes:
-            khotsnode.append(tf.reduce(tf.one_hot(on, numnodes), axis=0))
+            khotsnode.append(tf.reduce_sum(tf.one_hot(on, numnodes), axis=0))
         # khotsnode is of shape (b, n, n)
-        khotsnode = tf.tile(tf.expand_dims(tf.stack(khotsnode, axis=0), axis=0), [n1.shape[0],1,1])
+        khotsnode = tf.tile(tf.expand_dims(tf.stack(khotsnode, axis=0), axis=0), [numbatchs,1,1])
 
 
         # khotsedge is a list of indicator vectors
         khotsedge = []
         for oe in outedges:
-            khotsedge.append(tf.reduce(tf.one_hot(oe, numedges), axis=0))
+            khotsedge.append(tf.reduce_sum(tf.one_hot(oe, numedges), axis=0))
         # khotedges is of shape (b, n, e)
-        khotsedge = tf.tile(tf.expand_dims(tf.stack(khotsedge, axis=0), axis=0), [n1.shape[0],1,1])
+        khotsedge = tf.tile(tf.expand_dims(tf.stack(khotsedge, axis=0), axis=0), [numbatchs,1,1])
         # edgesums is of shape (b, n, p)
-        edgesums = tf.matmul(knotsedge, edgelinears)
+        edgesums = tf.matmul(khotsedge, edgelinears)
 
 
         # edgesumlinears is of shape (b, n, p)
         edgesumlinears = layers.fully_connected(edgesums, num_outputs=hidden, activation_fn=None)
         # inptlinears is of shape (b, n, p)
         inptlinears = nodelinears + edgesumlinears + globallinears
-        curinputlinears = tf.nn.relu(inputlinears) # (b, n, p)
+        curinputlinears = tf.nn.relu(inptlinears) # (b, n, p)
         #W = tf.get_variable("graph_W", [hidden, hidden], initializer=tf.initializers.xavier_initializer())
 
         for level in range(embeditrn):
             #outlinears = curinputlinears @ W
             outlinears = layers.fully_connected(curinputlinears, num_outputs=hidden, activation_fn=None, reuse=True, scope="graph") #(b, n, p)
             #neighborsums is of shape (b, n, p)
-            neighborsums = tf.matmul(knotsnode, outlinears)
+            neighborsums = tf.matmul(khotsnode, outlinears)
             # curinputlinears is of shape (b, n, p)
             curinputlinears = tf.nn.relu(neighborsums + inptlinears)
         nodeembed = curinputlinears #(b, n, p)
         # insert a second GN block
-        receivers = tf.tile(tf.expand_dims(tf.one_hot(edgev, numnodes), axis=0), [n1.shape[0],1,1]) # (b, e, n)
+        receivers = tf.tile(tf.expand_dims(tf.one_hot(edgev, numnodes), axis=0), [numbatchs,1,1]) # (b, e, n)
         pathedge = tf.expand_dims(e3, axis= 2) # (b, e, 1)
         #tf.gather(e3perm, pathindexs) # of shape (b, k, 1)
         zero = tf.constant(0, dtype=e3.dtype)
@@ -76,8 +77,8 @@ def _struct_2_vec(hidden, embeditrn, numbatchs,  numnodes, numedges, numglobals,
         # unstack edgeembed
         edgeembedlist = tf.unstack(edgeembed, axis=0) # b length list of (e,p)
         # qlinears should be (b,1,p)
-        qlinears = layers.fully_connected(tf.reduce_sum(edgeembed, axis=1, keepdims=True), num_outputs=hidden, activation_fn=tf.nn.relu)
-        qnlinears = tf.tile(qlist[idx], [1, numedges,1])  # (b, e, p)
+        qlinears = layers.fully_connected(tf.reduce_sum(edgeembed, axis=1, keep_dims=True), num_outputs=hidden, activation_fn=tf.nn.relu)
+        qnlinears = tf.tile(qlinears, [1, numedges,1])  # (b, e, p)
         qnlinears2 = tf.concat([qnlinears, actlinears], axis=2) #(b, e, 2p)
         q = tf.squeeze(layers.fully_connected(qnlinears2, num_outputs=1, activation_fn=None, biases_initializer=None), [2]) # (b, e)
 
@@ -109,8 +110,4 @@ def struct_2_vec(hidden, embeditrn, numbatchs, numnodes, numedges, numglobals, o
     q_func: function
         q_function for Q learning
     """
-    # outnodes is a list length n of out nodes
-    outnodes = np.split(outnodes, outdegrees, axis = 1)
-    # outedges is a list length n of out edges
-    outedges = np.split(outedges, outdegrees, axis = 1)
     return lambda *args, **kwargs: _struct_2_vec(hidden, embeditrn, numbatchs, numnodes, numedges, numglobals, outnodes, outedges, edgev, *args, **kwargs)
